@@ -8,7 +8,7 @@
 
 #include "larpandoracontent/LArCRTagging/CRTaggingAlgorithm.h"
 #include "larpandoracontent/LArObjects/LArMCParticle.h"
-
+#include "larpandoracontent/LArObjects/LArThreeDSlidingFitResult.h"
 
 using namespace pandora;
 
@@ -410,7 +410,7 @@ void CRTaggingAlgorithm::GetTargetIds( LArMonitoringHelper::MCContributionMap ta
 void CRTaggingAlgorithm::GetCRCandidates( const PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, CRCandidateList & candidates ) const
 {
   for ( const ParticleFlowObject * const pPfo : *pPfoList ) {
-    CRCandidate candidate( pPfo, pfoIdMap[pPfo], pfoToPurityMap[pPfo], pfoToSignificanceMap[pPfo] );
+    CRCandidate candidate(this, pPfo, pfoIdMap[pPfo], pfoToPurityMap[pPfo], pfoToSignificanceMap[pPfo] );
     candidates.push_back(candidate);
   }
 }
@@ -497,9 +497,9 @@ void CRTaggingAlgorithm::Write2DHits( CaloHitToOriginMap caloHitToOriginMap, LAr
         }
   
         PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Origin" , int (it->second) ));
+      
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Hits"));
       }
-
-      PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Hits"));
   }
 }
 
@@ -542,9 +542,13 @@ void CRTaggingAlgorithm::Write3DHits( CaloHitToPfoMap caloHitToPfoMap, PfoToIntM
         else{ 
           PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", pfoIdMap[caloHitToPfoMap[pCaloHit]]));
         }
-      }
-
-      PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Hits"));
+          
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetId" , -1));  
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetPdg", std::numeric_limits<int>::max()));  
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Origin"   , -1));
+  
+        PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Hits"));
+    }
   }
 }
 
@@ -567,15 +571,26 @@ void CRTaggingAlgorithm::WriteTargets( MCToIntMap targetIdMap ) const
 void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
 {
   for ( CRCandidate candidate : candidates ){
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "FileId"      , m_fileId                 ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "EventId"     , m_eventNumber            ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Id"          , candidate.m_id           ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "FileId"      , m_fileId                   ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "EventId"     , m_eventNumber              ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Id"          , candidate.m_id             ));
 
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N2DHits"     , candidate.m_n2DHits      ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N3DHits"     , candidate.m_n3DHits      ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "TotalEnergy" , candidate.m_totalEnergy  ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "MeanEnergy"  , candidate.m_meanEnergy   ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N2DHits"     , candidate.m_n2DHits        ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N3DHits"     , candidate.m_n3DHits        ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "TotalEnergy" , candidate.m_totalEnergy    ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "MeanEnergy"  , candidate.m_meanEnergy     ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "CanFit"      , candidate.m_canFit ? 1 : 0 ));
 
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "X1", candidate.m_X1 ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Y1", candidate.m_Y1 ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Z1", candidate.m_Z1 ));
+
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "X2", candidate.m_X2 ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Y2", candidate.m_Y2 ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Z2", candidate.m_Z2 ));
+    
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Length", candidate.m_length ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "FitRMS", candidate.m_fitRMS ));
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Purity"      , candidate.m_purity       ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Significance", candidate.m_significance ));
@@ -588,11 +603,25 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-CRTaggingAlgorithm::CRCandidate::CRCandidate(const pandora::ParticleFlowObject * const pPfo, int id, double purity, double significance ) : 
+CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, double purity, double significance ) :
+  m_algorithm ( algorithm ), 
   m_pPfo( pPfo ),
   m_id( id ),
+  m_n2DHits( -1 ),
+  m_n3DHits( -1 ),
+  m_totalEnergy( -1 ),
+  m_meanEnergy( -1 ),
+  m_canFit( false ),
+  m_fitRMS ( std::numeric_limits<double>::max() ),
+  m_X1 ( std::numeric_limits<double>::max() ),
+  m_Y1 ( std::numeric_limits<double>::max() ),
+  m_Z1 ( std::numeric_limits<double>::max() ),
+  m_X2 ( std::numeric_limits<double>::max() ),
+  m_Y2 ( std::numeric_limits<double>::max() ),
+  m_Z2 ( std::numeric_limits<double>::max() ),
+  m_length ( std::numeric_limits<double>::max() ),
   m_purity( purity ),
-  m_significance( significance )
+  m_significance( significance ) 
 {
   // Get the hit lists
   ClusterList clusters2D;
@@ -609,7 +638,6 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const pandora::ParticleFlowObject *
   ClusterList clusters3D;
   LArPfoHelper::GetThreeDClusterList(pPfo, clusters3D);
 
-  std::cout << clusters3D.size() << " : " << m_hitList2D.size() << std::endl;    
   for (const Cluster * const pCluster : clusters3D){
     CaloHitList caloHitList;
     pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
@@ -625,6 +653,7 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const pandora::ParticleFlowObject *
   this->CalculateNHits();
   this->CalculateTotalEnergy();
   this->CalculateMeanEnergy();
+  this->CalculateFitVariables();  
 
   this->DetermineClass();
 }
@@ -659,10 +688,33 @@ void CRTaggingAlgorithm::CRCandidate::CalculateMeanEnergy()
 void CRTaggingAlgorithm::CRCandidate::CalculateFitVariables()
 {
   int minimum3DHits = 15;
-  bool m_canFit = ( m_n3DHits > minimum3DHits );
+
+  m_canFit = ( m_n3DHits >= minimum3DHits );
   if ( ! m_canFit ) return;
 
+  ClusterList clusters3D;
+  LArPfoHelper::GetThreeDClusterList(m_pPfo, clusters3D);
+  const Cluster * const pCluster = clusters3D.front();
+
+  ThreeDSlidingFitResult fit (pCluster, 10000, LArGeometryHelper::GetWireZPitch(m_algorithm->GetPandora())); 
+
+  CartesianVector minPos = fit.GetGlobalMinLayerPosition();
+  CartesianVector maxPos = fit.GetGlobalMaxLayerPosition();
   
+  // End Points 
+  m_X1 = minPos.GetX();
+  m_Y1 = minPos.GetY();
+  m_Z1 = minPos.GetZ();
+ 
+  m_X2 = maxPos.GetX();
+  m_Y2 = maxPos.GetY();
+  m_Z2 = maxPos.GetZ();
+
+  // Straight line length
+  m_length = (maxPos - minPos).GetMagnitude();
+
+  //RMS
+  m_fitRMS = fit.GetMinLayerRms();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

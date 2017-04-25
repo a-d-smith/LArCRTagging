@@ -83,7 +83,9 @@ private:
       /**
        *  @brief  Parametrised constructor
        */ 
-      CRCandidate(const pandora::ParticleFlowObject * const pPfo, int id, double purity, double significance );
+      CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, double purity, double significance );
+
+      const CRTaggingAlgorithm * const          m_algorithm;    ///< The algorithm using this candidate
 
       // Data on the candidate PFO
       const pandora::ParticleFlowObject * const m_pPfo;         ///< Address of the candidate PFO
@@ -100,23 +102,21 @@ private:
 
       bool                                      m_canFit;       ///< If there are a sufficient number of 3D hits to perform a fitting
 
-      /*
-      double                                    m_fitChi2;      ///< Chi2 of the 3D sliding linear fit result 
+      double                                    m_fitRMS;       ///< RMS of the 3D linear fit result 
       
-      double                                    m_minX;         ///< Minimum x-coordinate of fitted hit points in 3D
-      double                                    m_minY;         ///< Minimum y-coordinate of fitted hit points in 3D
-      double                                    m_minZ;         ///< Minimum z-coordinate of fitted hit points in 3D
+      double                                    m_X1;           ///< x-coordinate of 1st fitted hit end point in 3D
+      double                                    m_Y1;           ///< y-coordinate of 1st fitted hit end point in 3D
+      double                                    m_Z1;           ///< z-coordinate of 1st fitted hit end point in 3D
 
-      double                                    m_maxX;         ///< Maximum x-coordinate of fitted hit points in 3D
-      double                                    m_maxY;         ///< Maximum y-coordinate of fitted hit points in 3D
-      double                                    m_maxZ;         ///< Maximum z-coordinate of fitted hit points in 3D
+      double                                    m_X2;           ///< x-coordinate of 2nd fitted hit end point in 3D
+      double                                    m_Y2;           ///< y-coordinate of 2nd fitted hit end point in 3D
+      double                                    m_Z2;           ///< z-coordinate of 2nd fitted hit end point in 3D
 
-      double                                    m_length;       ///< Length of the sliding linear fit
+      double                                    m_length;       ///< Straight line length of the linear fit
+      /*
       double                                    m_theta1;       ///< Direction of the fit 1
       double                                    m_theta2;       ///< Direction of the fit 2
 
-      double                                    m_topDist;      ///< Distance between top face (high y) of the detector volume and the nearest fitted end point  
-      double                                    m_bottomDist;   ///< Distance between bottom face (low y) of the detector volume and the nearest fitted end point  
       */
 
       // Data used for classification
