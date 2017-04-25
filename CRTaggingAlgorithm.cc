@@ -114,11 +114,13 @@ StatusCode CRTaggingAlgorithm::Run()
   // Output to a root file
   // ===================================================
   
-  CaloHitToPfoMap caloHitToPfoMap;
-  this->GetCaloHitToPfoMap( pPfoList, caloHitToPfoMap );
+  CaloHitToPfoMap caloHit2DToPfoMap;
+  CaloHitToPfoMap caloHit3DToPfoMap;
+  this->GetCaloHitToPfoMap( pPfoList, caloHit2DToPfoMap, caloHit3DToPfoMap );
 
 
-  this->WriteHits( caloHitToOriginMap, caloHitToTargetMap, caloHitToPfoMap, pfoIdMap, targetIdMap );
+  this->Write2DHits( caloHitToOriginMap, caloHitToTargetMap, caloHit2DToPfoMap, pfoIdMap, targetIdMap );
+  this->Write3DHits( caloHit3DToPfoMap, pfoIdMap );
   this->WriteTargets( targetIdMap );
   this->WritePfos( candidates );
 
@@ -415,7 +417,7 @@ void CRTaggingAlgorithm::GetCRCandidates( const PfoList * const pPfoList, PfoToD
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CRTaggingAlgorithm::GetCaloHitToPfoMap( const PfoList * const pPfoList, CaloHitToPfoMap & caloHitToPfoMap ) const 
+void CRTaggingAlgorithm::GetCaloHitToPfoMap( const PfoList * const pPfoList, CaloHitToPfoMap & caloHit2DToPfoMap, CaloHitToPfoMap & caloHit3DToPfoMap ) const 
 {
   for ( const ParticleFlowObject * const pPfo : *pPfoList ) {
     ClusterList clusters2D;
@@ -425,15 +427,27 @@ void CRTaggingAlgorithm::GetCaloHitToPfoMap( const PfoList * const pPfoList, Cal
       CaloHitList caloHitList;
       pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
       for (const CaloHit * const pCaloHit : caloHitList){
-        caloHitToPfoMap.insert(std::make_pair(pCaloHit, pPfo));
+        caloHit2DToPfoMap.insert(std::make_pair(pCaloHit, pPfo));
       }
     }
+
+    ClusterList clusters3D;
+    LArPfoHelper::GetThreeDClusterList(pPfo, clusters3D);
+      
+    for (const Cluster * const pCluster : clusters3D){
+      CaloHitList caloHitList;
+      pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
+      for (const CaloHit * const pCaloHit : caloHitList){
+        caloHit3DToPfoMap.insert(std::make_pair(pCaloHit, pPfo));
+      }
+    }
+
   }
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CRTaggingAlgorithm::WriteHits( CaloHitToOriginMap caloHitToOriginMap, LArMonitoringHelper::CaloHitToMCMap caloHitToTargetMap, CaloHitToPfoMap caloHitToPfoMap, PfoToIntMap pfoIdMap, MCToIntMap targetIdMap ) const 
+void CRTaggingAlgorithm::Write2DHits( CaloHitToOriginMap caloHitToOriginMap, LArMonitoringHelper::CaloHitToMCMap caloHitToTargetMap, CaloHitToPfoMap caloHitToPfoMap, PfoToIntMap pfoIdMap, MCToIntMap targetIdMap ) const 
 {
   for ( CaloHitToOriginMap::iterator it = caloHitToOriginMap.begin(); it != caloHitToOriginMap.end(); ++it ) {
       const CaloHit * const pCaloHit = it->first;
@@ -456,31 +470,79 @@ void CRTaggingAlgorithm::WriteHits( CaloHitToOriginMap caloHitToOriginMap, LArMo
           viewInt = -1;
       }
 
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "FileId"      , m_fileId       ));
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "EventId"     , m_eventNumber  ));
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "View"        , viewInt ));
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "X"           , pCaloHit->GetPositionVector().GetX() ));
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Y"           , pCaloHit->GetPositionVector().GetY() ));
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Z"           , pCaloHit->GetPositionVector().GetZ() ));
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "InputEnergy" , pCaloHit->GetInputEnergy()           ));
+      if ( viewInt == 0 || viewInt == 1 || viewInt == 2 ){
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "FileId"      , m_fileId       ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "EventId"     , m_eventNumber  ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "View"        , viewInt ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "X"           , pCaloHit->GetPositionVector().GetX() ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Y"           , pCaloHit->GetPositionVector().GetY() ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Z"           , pCaloHit->GetPositionVector().GetZ() ));
 
-      if ( caloHitToPfoMap.find(pCaloHit) == caloHitToPfoMap.end() ){
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", -1));  
-      } 
-      else{ 
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", pfoIdMap[caloHitToPfoMap[pCaloHit]]));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "InputEnergy" , pCaloHit->GetInputEnergy()           ));
+  
+        if ( caloHitToPfoMap.find(pCaloHit) == caloHitToPfoMap.end() ){
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", -1));  
+        } 
+        else{ 
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", pfoIdMap[caloHitToPfoMap[pCaloHit]]));
+        }
+  
+        if ( caloHitToTargetMap.find(pCaloHit) == caloHitToTargetMap.end() ) {
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetId" , -1));  
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetPdg", std::numeric_limits<int>::max()));  
+        }
+        else{
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetId" , targetIdMap[caloHitToTargetMap[pCaloHit]] ));  
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetPdg", caloHitToTargetMap[pCaloHit]->GetParticleId() ));  
+        }
+  
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Origin" , int (it->second) ));
       }
 
-      if ( caloHitToTargetMap.find(pCaloHit) == caloHitToTargetMap.end() ) {
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetId" , -1));  
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetPdg", std::numeric_limits<int>::max()));  
-      }
-      else{
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetId" , targetIdMap[caloHitToTargetMap[pCaloHit]] ));  
-        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "TargetPdg", caloHitToTargetMap[pCaloHit]->GetParticleId() ));  
+      PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Hits"));
+  }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::Write3DHits( CaloHitToPfoMap caloHitToPfoMap, PfoToIntMap pfoIdMap ) const 
+{
+  for ( CaloHitToPfoMap::iterator it = caloHitToPfoMap.begin(); it != caloHitToPfoMap.end(); ++it ) {
+      const CaloHit * const pCaloHit = it->first;
+
+      int viewInt;
+      switch ( pCaloHit->GetHitType() ) { 
+        case TPC_VIEW_U:
+          viewInt = 0;
+          break;   
+        case TPC_VIEW_V:
+          viewInt = 1;
+          break;   
+        case TPC_VIEW_W:
+          viewInt = 2;
+          break;   
+        case TPC_3D:
+          viewInt = 3;
+          break;
+        default:
+          viewInt = -1;
       }
 
-      PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Origin" , int (it->second) ));
+      if ( viewInt == 3 ){
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "FileId"      , m_fileId       ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "EventId"     , m_eventNumber  ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "View"        , viewInt ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "X"           , pCaloHit->GetPositionVector().GetX() ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Y"           , pCaloHit->GetPositionVector().GetY() ));
+        PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "Z"           , pCaloHit->GetPositionVector().GetZ() ));
+
+        if ( caloHitToPfoMap.find(pCaloHit) == caloHitToPfoMap.end() ){
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", -1));  
+        } 
+        else{ 
+          PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Hits", "PfoId", pfoIdMap[caloHitToPfoMap[pCaloHit]]));
+        }
+      }
 
       PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Hits"));
   }
@@ -509,7 +571,8 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "EventId"     , m_eventNumber            ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Id"          , candidate.m_id           ));
 
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "NHits"       , candidate.m_nHits        ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N2DHits"     , candidate.m_n2DHits      ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N3DHits"     , candidate.m_n3DHits      ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "TotalEnergy" , candidate.m_totalEnergy  ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "MeanEnergy"  , candidate.m_meanEnergy   ));
 
@@ -570,7 +633,8 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const pandora::ParticleFlowObject *
 
 void CRTaggingAlgorithm::CRCandidate::CalculateNHits()
 {
-  m_nHits = m_hitList2D.size();
+  m_n2DHits = m_hitList2D.size();
+  m_n3DHits = m_hitList3D.size();
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -587,13 +651,17 @@ void CRTaggingAlgorithm::CRCandidate::CalculateTotalEnergy()
 
 void CRTaggingAlgorithm::CRCandidate::CalculateMeanEnergy()
 {
-  m_meanEnergy = m_totalEnergy / ( double (m_nHits) );
+  m_meanEnergy = m_totalEnergy / ( double (m_n2DHits) );
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void CRTaggingAlgorithm::CRCandidate::CalculateFitVariables()
 {
+  int minimum3DHits = 15;
+  bool m_canFit = ( m_n3DHits > minimum3DHits );
+  if ( ! m_canFit ) return;
+
   
 }
 
@@ -601,12 +669,13 @@ void CRTaggingAlgorithm::CRCandidate::CalculateFitVariables()
 
 void CRTaggingAlgorithm::CRCandidate::DetermineClass()
 {
-  int    minimumHits          = 15;
+  int    minimum2DHits        = 15;
+  int    minimum3DHits        = 15;
   double pureThreshold        = 0.95;
   double impureThreshold      = 0.05;
   double significantThreshold = 0.1;
 
-  if ( m_nHits < minimumHits ) {
+  if ( m_n2DHits < minimum2DHits || m_n3DHits < minimum3DHits ) {
     m_class = UNCLASSIFIABLE; 
   }
   else{

@@ -92,10 +92,13 @@ private:
       int                                       m_id;           ///< Unique idendifier for the PFO
      
       // Variables used to identify cosmic rays
-      int                                       m_nHits;        ///< Number of 2D hits over all views
+      int                                       m_n2DHits;      ///< Number of 2D hits over all views
+      int                                       m_n3DHits;      ///< Number of 3D hits
 
       double                                    m_totalEnergy;  ///< Sum of all input hit energies
       double                                    m_meanEnergy;   ///< Mean of all input hit energies 
+
+      bool                                      m_canFit;       ///< If there are a sufficient number of 3D hits to perform a fitting
 
       /*
       double                                    m_fitChi2;      ///< Chi2 of the 3D sliding linear fit result 
@@ -279,13 +282,14 @@ private:
     /**
      *  @brief  Make a list of CRCandidates
      *
-     *  @param  pPfoList         input list of PFOs
-     *  @param  caloHitToPfoMap  output mapping between CaloHits and their associated PFO
+     *  @param  pPfoList           input list of PFOs
+     *  @param  caloHit2DToPfoMap  output mapping between 2D CaloHits and their associated PFO
+     *  @param  caloHit3DToPfoMap  output mapping between 3D CaloHits and their associated PFO
      */
-    void GetCaloHitToPfoMap( const pandora::PfoList * const pPfoList, CaloHitToPfoMap & caloHitToPfoMap ) const;
+    void GetCaloHitToPfoMap( const pandora::PfoList * const pPfoList, CaloHitToPfoMap & caloHit2DToPfoMap, CaloHitToPfoMap & caloHit3DToPfoMap ) const;
 
     /**
-     *  @brief  Write information on all hits to a root file
+     *  @brief  Write information on all 2D hits to a root file
      *
      *  @param  caloHitsToOriginMap  mapping between CaloHits and their origin
      *  @param  caloHitToTargetMap   mapping between CaloHits and the associated target MCParticle (if any)
@@ -293,7 +297,15 @@ private:
      *  @param  pfoIdMap             mapping between PFOs and their IDs
      *  @param  targetIdMap          mapping between target MCParticles and their IDs
      */
-    void WriteHits( CaloHitToOriginMap caloHitToOriginMap, LArMonitoringHelper::CaloHitToMCMap caloHitToTargetMap, CaloHitToPfoMap caloHitToPfoMap, PfoToIntMap pfoIdMap, MCToIntMap targetIdMap ) const;
+    void Write2DHits( CaloHitToOriginMap caloHitToOriginMap, LArMonitoringHelper::CaloHitToMCMap caloHitToTargetMap, CaloHitToPfoMap caloHitToPfoMap, PfoToIntMap pfoIdMap, MCToIntMap targetIdMap ) const;
+
+    /**
+     *  @brief  Write information on all 3D hits to a root file
+     *
+     *  @param  caloHitToPfoMap      mapping between CaloHits and their associated PFO
+     *  @param  pfoIdMap             mapping between PFOs and their IDs
+     */
+    void Write3DHits( CaloHitToPfoMap caloHitToPfoMap, PfoToIntMap pfoIdMap ) const;
 
     /**
      *  @brief  Write information on all target MCParticles
