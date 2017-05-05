@@ -25,9 +25,9 @@ CRTaggingAlgorithm::CRTaggingAlgorithm() :
 }
 
 CRTaggingAlgorithm::~CRTaggingAlgorithm() {
-  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "PFOs"   , "TaggedPFOs.root", "UPDATE"));
-  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Hits"   , "TaggedPFOs.root", "UPDATE"));
-  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Targets", "TaggedPFOs.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "PFOs"   , "EventData.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Hits"   , "EventData.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Targets", "EventData.root", "UPDATE"));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -577,6 +577,7 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N2DHits"     , candidate.m_n2DHits        ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N3DHits"     , candidate.m_n3DHits        ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "NDaughters"  , candidate.m_nDaughters     ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "TotalEnergy" , candidate.m_totalEnergy    ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "MeanEnergy"  , candidate.m_meanEnergy     ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "CanFit"      , candidate.m_canFit ? 1 : 0 ));
@@ -589,8 +590,9 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Y2", candidate.m_Y2 ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Z2", candidate.m_Z2 ));
     
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Length", candidate.m_length ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "FitRMS", candidate.m_fitRMS ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Length", candidate.m_length       ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Curvature", candidate.m_curvature ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "FitRMS", candidate.m_fitRMS       ));
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Purity"      , candidate.m_purity       ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Significance", candidate.m_significance ));
@@ -609,6 +611,7 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const al
   m_id( id ),
   m_n2DHits( -1 ),
   m_n3DHits( -1 ),
+  m_nDaughters( -1 ),
   m_totalEnergy( -1 ),
   m_meanEnergy( -1 ),
   m_canFit( false ),
@@ -620,6 +623,7 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const al
   m_Y2 ( std::numeric_limits<double>::max() ),
   m_Z2 ( std::numeric_limits<double>::max() ),
   m_length ( std::numeric_limits<double>::max() ),
+  m_curvature ( std::numeric_limits<double>::max() ),
   m_purity( purity ),
   m_significance( significance ) 
 {
@@ -651,6 +655,7 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const al
   //     Some calculations depend on the results of the previous
 
   this->CalculateNHits();
+  this->CalculateNDaughters();
   this->CalculateTotalEnergy();
   this->CalculateMeanEnergy();
   this->CalculateFitVariables();  
@@ -666,6 +671,12 @@ void CRTaggingAlgorithm::CRCandidate::CalculateNHits()
   m_n3DHits = m_hitList3D.size();
 }
 
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::CRCandidate::CalculateNDaughters()
+{
+  m_nDaughters = m_pPfo->GetNDaughterPfos();
+}
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void CRTaggingAlgorithm::CRCandidate::CalculateTotalEnergy()
@@ -696,7 +707,7 @@ void CRTaggingAlgorithm::CRCandidate::CalculateFitVariables()
   LArPfoHelper::GetThreeDClusterList(m_pPfo, clusters3D);
   const Cluster * const pCluster = clusters3D.front();
 
-  ThreeDSlidingFitResult fit (pCluster, 10000, LArGeometryHelper::GetWireZPitch(m_algorithm->GetPandora())); 
+  ThreeDSlidingFitResult fit (pCluster, 5, LArGeometryHelper::GetWireZPitch(m_algorithm->GetPandora())); 
 
   CartesianVector minPos = fit.GetGlobalMinLayerPosition();
   CartesianVector maxPos = fit.GetGlobalMaxLayerPosition();
@@ -710,11 +721,35 @@ void CRTaggingAlgorithm::CRCandidate::CalculateFitVariables()
   m_Y2 = maxPos.GetY();
   m_Z2 = maxPos.GetZ();
 
-  // Straight line length
+  // Straight line length between end points
   m_length = (maxPos - minPos).GetMagnitude();
 
   //RMS
   m_fitRMS = fit.GetMinLayerRms();
+
+  // Curvature
+  int minLayer = std::max(0, fit.GetMinLayer());
+  int maxLayer = fit.GetMaxLayer();
+
+  unsigned int nSamples = maxLayer - minLayer;
+  
+  m_curvature = 0;
+
+  // Calculate the mean direction
+  CartesianVector meanDir(0, 0, 0);
+  for ( unsigned int i=0; i<nSamples; i++ ) {
+    CartesianVector dir (0, 0, 0);
+    fit.GetGlobalFitDirection( ( minLayer + i ) * LArGeometryHelper::GetWireZPitch(m_algorithm->GetPandora()), dir);
+    meanDir += dir * ( 1/ double ( nSamples ));
+  }
+
+  // Now calculate the average deviation from the mean direction
+  for ( unsigned int i=0; i<nSamples; i++ ) {
+    CartesianVector dir (0, 0, 0);
+    fit.GetGlobalFitDirection( ( minLayer + i ) * LArGeometryHelper::GetWireZPitch(m_algorithm->GetPandora()), dir);
+    m_curvature += (dir - meanDir).GetMagnitude() / double ( nSamples );
+  }
+
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------

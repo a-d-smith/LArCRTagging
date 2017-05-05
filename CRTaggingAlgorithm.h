@@ -96,6 +96,8 @@ private:
       // Variables used to identify cosmic rays
       int                                       m_n2DHits;      ///< Number of 2D hits over all views
       int                                       m_n3DHits;      ///< Number of 3D hits
+    
+      int                                       m_nDaughters;   ///< Number of daughter PFOs
 
       double                                    m_totalEnergy;  ///< Sum of all input hit energies
       double                                    m_meanEnergy;   ///< Mean of all input hit energies 
@@ -113,6 +115,7 @@ private:
       double                                    m_Z2;           ///< z-coordinate of 2nd fitted hit end point in 3D
 
       double                                    m_length;       ///< Straight line length of the linear fit
+      double                                    m_curvature;    ///< Measure of the curvature of the track
       /*
       double                                    m_theta1;       ///< Direction of the fit 1
       double                                    m_theta2;       ///< Direction of the fit 2
@@ -126,6 +129,7 @@ private:
 
       // Functions to calcluate the required variables for classification
       void CalculateNHits();                                    ///< Calculate m_nHits
+      void CalculateNDaughters();                               ///< Calculate m_nDaughters
       void CalculateTotalEnergy();                              ///< Calculate m_totalEnergy
       void CalculateMeanEnergy();                               ///< Calculate m_meanEnergy 
       void CalculateFitVariables();                             ///< Calculate all variables which require the fit
