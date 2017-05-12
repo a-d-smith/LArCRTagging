@@ -10,6 +10,9 @@
 #include "larpandoracontent/LArObjects/LArMCParticle.h"
 #include "larpandoracontent/LArObjects/LArThreeDSlidingFitResult.h"
 
+#include "Pandora/PdgTable.h"
+#include <iomanip>
+
 using namespace pandora;
 
 namespace lar_content
@@ -31,6 +34,30 @@ CRTaggingAlgorithm::~CRTaggingAlgorithm() {
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
+
+/* TESTING ================================================= */
+/*
+void PrintDaughterInfo( const MCParticle * const pMCParticle, int depth, std::map< const MCParticle * const, int > & mcParticleToNHitsMap ) {
+ 
+  int             pdg      = pMCParticle->GetParticleId();
+  
+  std::cout << std::string( 3*( depth - 1), ' ') << "|- " << std::left << std::setw(12) << pdg;
+
+  int nHits = 0;
+  if ( mcParticleToNHitsMap.find( pMCParticle ) != mcParticleToNHitsMap.end() ){
+    nHits = mcParticleToNHitsMap[ pMCParticle ];
+    std::cout << std::string( 3 * (10 - depth), ' ') << nHits;
+  }
+
+  std::cout << std::endl;
+
+  for ( const MCParticle * const pMCDaughter : pMCParticle->GetDaughterList() ) {
+    PrintDaughterInfo( pMCDaughter, depth + 1, mcParticleToNHitsMap );
+  }
+  
+}
+*/
+/* END TESTING ============================================= */
 
 StatusCode CRTaggingAlgorithm::Run()
 {
@@ -58,6 +85,85 @@ StatusCode CRTaggingAlgorithm::Run()
   const MCParticleList *pMCParticleList = nullptr;
   PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_mcParticleListName, pMCParticleList)); 
 
+
+
+
+
+
+  /* TESTING ================================================= */
+  /*
+  // Get number of hits associated with each MCParticle
+  std::map< const MCParticle * const, int > mcParticleToNHitsMap;
+  std::map< const MCParticle * const, int > mcPrimaryToNHitsMap;
+
+  std::map< int,   std::map< int, int > >   hitProductionMap;
+  //        ^ PDG of primary ^    ^
+  //                         |    | Number of hits
+  //                         | PDG of particle producing hits
+
+  for ( const CaloHit * const pCaloHit : *pCaloHitList ) {
+    const MCParticle * mainMCParticle = this->GetMainMCParticle(pCaloHit);
+    if ( ! mainMCParticle ) continue; // Ghost hit
+    if ( mcParticleToNHitsMap.find( mainMCParticle ) == mcParticleToNHitsMap.end() ) {
+      mcParticleToNHitsMap.insert( std::make_pair( mainMCParticle, 0 ) );
+    }
+  
+    const MCParticle * primaryMCParticle = LArMCParticleHelper::GetPrimaryMCParticle(mainMCParticle);
+    if ( mcPrimaryToNHitsMap.find( primaryMCParticle ) == mcPrimaryToNHitsMap.end() ) {
+      mcPrimaryToNHitsMap.insert( std::make_pair( primaryMCParticle, 0 ) );
+    }
+    
+    int thisPdg = mainMCParticle->GetParticleId();
+    int primaryPdg = primaryMCParticle->GetParticleId();
+    if ( hitProductionMap.find( primaryPdg ) == hitProductionMap.end() ) {
+      std::map< int, int > emptyMap;
+      hitProductionMap.insert( std::make_pair( primaryPdg, emptyMap ) );
+    }
+
+    if ( hitProductionMap[ primaryPdg ].find( thisPdg ) == hitProductionMap[ primaryPdg ].end() ) {
+      hitProductionMap[ primaryPdg ].insert( std::make_pair( thisPdg, 0 ) );
+    }
+
+    hitProductionMap[ primaryPdg ][ thisPdg ] ++;
+
+    mcParticleToNHitsMap[ mainMCParticle ]++;
+    mcPrimaryToNHitsMap[ primaryMCParticle ]++;
+  }
+
+  for ( std::map< int, std::map< int, int > >::iterator it1 = hitProductionMap.begin(); it1 != hitProductionMap.end(); ++it1 ) {
+    std::cout << it1->first << std::endl;
+    int tot = 0;
+    for ( std::map< int, int >::iterator it2 = it1->second.begin(); it2 != it1->second.end(); ++it2 ) {
+      std::cout << "  " << it2->first << " : " << it2->second << std::endl;
+      tot += it2->second;
+    }
+    std::cout << "  total : " << tot << std::endl;
+  }
+
+
+  for ( const MCParticle * const pMCParticle : *pMCParticleList ) {
+    // Find each cosmic primary MCParticle
+    if ( pMCParticle->GetParentList().size() == 0 && ! LArMCParticleHelper::IsNeutrinoInduced( pMCParticle ) ) {
+      std::cout << std::string(80, '-') << '\r';
+      std::cout << "Primary "   << pMCParticle->GetParticleId() << " " << std::endl;
+
+      int nHits = 0;
+      if ( mcPrimaryToNHitsMap.find( pMCParticle ) != mcPrimaryToNHitsMap.end() ) {
+        nHits = mcPrimaryToNHitsMap[pMCParticle];
+      }
+      std::cout << "NHits   : " << nHits << std::endl;
+      if ( nHits != 0 ) {
+        PrintDaughterInfo( pMCParticle, 1, mcParticleToNHitsMap );
+      }
+    }
+  }
+  */
+  /* END TESTING ============================================= */
+
+
+
+
+
   // ===================================================
   // Use MC information to find the origin of hits
   // ===================================================
@@ -79,7 +185,7 @@ StatusCode CRTaggingAlgorithm::Run()
   // Assign each hit an origin
   CaloHitToOriginMap caloHitToOriginMap;
   this->GetHitOrigins( pCaloHitList, caloHitToTargetMap, caloHitToOriginMap );
-  
+
   // ===================================================
   // Find the purity / significance of the PFOs
   // ===================================================
@@ -92,6 +198,10 @@ StatusCode CRTaggingAlgorithm::Run()
   
   MCToIntMap targetIdMap;
   this->GetTargetIds( targetToCaloHitListMap, targetIdMap );
+
+  // Find the PFOs are primary cosmic ray muons
+  PfoToBoolMap pfoToIsCosmicMuonMap;
+  this->GetIsCosmicMuon( pPfoList, caloHitToOriginMap, pfoToIsCosmicMuonMap);
  
   // ------------------------------------------------------------------------------------------------------------------------------------------
   // Here begins what might actually form the algorithm - everything else is for development only
@@ -104,8 +214,12 @@ StatusCode CRTaggingAlgorithm::Run()
   PfoToIntMap pfoIdMap;
   this->GetPfoIds( pPfoList, pfoIdMap );
 
+  PfoToPfoListMap pfoAssociationMap;
+  this->GetPfoAssociations ( pPfoList, pfoAssociationMap ); 
+
   CRCandidateList candidates;
-  this->GetCRCandidates( pPfoList, pfoToPurityMap, pfoToSignificanceMap, pfoIdMap, candidates );
+  this->GetCRCandidates( pPfoList, pfoToPurityMap, pfoToSignificanceMap, pfoIdMap, pfoAssociationMap, pfoToIsCosmicMuonMap, candidates );
+
 
   // ------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -407,10 +521,116 @@ void CRTaggingAlgorithm::GetTargetIds( LArMonitoringHelper::MCContributionMap ta
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CRTaggingAlgorithm::GetCRCandidates( const PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, CRCandidateList & candidates ) const
+void CRTaggingAlgorithm::GetIsCosmicMuon( const PfoList * const pPfoList, CaloHitToOriginMap caloHitToOriginMap, PfoToBoolMap & pfoToIsCosmicMuonMap) const {
+
+  for ( const ParticleFlowObject * const pPfo : *pPfoList ) {
+    // Get the list of associated MCParticles
+    std::map< const MCParticle * const, int > mcParticleContributionMap;
+
+    // For each hit in the PFO, find the associated cosmic MC primary (if any) 
+    // count the number of hits associated with each such MCParticle in the PFO
+    ClusterList clusters2D;
+    LArPfoHelper::GetTwoDClusterList(pPfo, clusters2D);
+
+    int nHits = 0;
+    for (const Cluster * const pCluster : clusters2D){
+      CaloHitList caloHitList;
+      pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
+
+      for (const CaloHit * const pCaloHit : caloHitList){
+        nHits++;
+        if ( caloHitToOriginMap[ pCaloHit ] == COSMIC ) { 
+          const MCParticle * mainMCParticle = this->GetMainMCParticle(pCaloHit);
+          if ( mainMCParticle != nullptr ) {
+            
+            if ( mcParticleContributionMap.find( mainMCParticle ) != mcParticleContributionMap.end() ) {
+              mcParticleContributionMap.insert( std::make_pair( mainMCParticle, 0 ) );
+            } 
+            mcParticleContributionMap[ mainMCParticle ]++;
+
+          }
+        }
+      }
+    }
+
+    bool isCosmicMuon = false;
+
+    // Now find the MC primary with the most associated hits
+    if ( mcParticleContributionMap.size() != 0 ){
+      const MCParticle * mainMCParticle = nullptr;
+      int maxHits = 0;
+      for ( std::map< const MCParticle * const, int >::iterator it = mcParticleContributionMap.begin(); it != mcParticleContributionMap.end(); ++it ){
+        if ( it->second > maxHits ) {
+          mainMCParticle = it->first;
+          maxHits        = it->second;
+        }
+      } 
+
+      // Determine if is a primary cosmic ray muon
+      isCosmicMuon = ( std::abs( mainMCParticle->GetParticleId() ) == MU_MINUS && LArMCParticleHelper::IsPrimary( mainMCParticle ) ) ;
+    }
+    
+    pfoToIsCosmicMuonMap.insert( std::make_pair( pPfo, isCosmicMuon ) );
+  }
+
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::GetPfoAssociations( const PfoList * const pPfoList, PfoToPfoListMap & pfoAssociationMap ) const 
+{
+  unsigned int minimum3DHits = 15;
+  double minDist = 20;
+
+  for ( const ParticleFlowObject * const pPfo1 : *pPfoList ) {
+    PfoList blankPfoList;
+    pfoAssociationMap.insert(std::make_pair( pPfo1, blankPfoList ));
+
+    ClusterList clusters3D1;
+    LArPfoHelper::GetThreeDClusterList(pPfo1, clusters3D1);
+    if ( clusters3D1.size() == 0 ) continue;
+    const Cluster * const pCluster1 = clusters3D1.front();
+    CaloHitList caloHitList1;
+    pCluster1->GetOrderedCaloHitList().FillCaloHitList(caloHitList1);
+    if ( caloHitList1.size() < minimum3DHits ) continue;
+
+ 
+    ThreeDSlidingFitResult fit1 (pCluster1, 5, LArGeometryHelper::GetWireZPitch(this->GetPandora())); 
+    CartesianVector min1 = fit1.GetGlobalMinLayerPosition();
+    CartesianVector max1 = fit1.GetGlobalMaxLayerPosition();
+
+    for ( const ParticleFlowObject * const pPfo2 : *pPfoList ) {
+      if ( pPfo1 != pPfo2 ) {
+        ClusterList clusters3D2;
+        LArPfoHelper::GetThreeDClusterList(pPfo2, clusters3D2);
+        if ( clusters3D2.size() == 0 ) continue;
+        const Cluster * const pCluster2 = clusters3D2.front();
+        CaloHitList caloHitList2;
+        pCluster2->GetOrderedCaloHitList().FillCaloHitList(caloHitList2);
+        if ( caloHitList2.size() < minimum3DHits ) continue;
+
+        ThreeDSlidingFitResult fit2 (pCluster2, 5, LArGeometryHelper::GetWireZPitch(this->GetPandora())); 
+        CartesianVector min2 = fit2.GetGlobalMinLayerPosition();
+        CartesianVector max2 = fit2.GetGlobalMaxLayerPosition();
+
+        bool isAssociated = false;
+        if ( (min1 - min2).GetMagnitude() < minDist ) isAssociated = true;
+        if ( (min1 - max2).GetMagnitude() < minDist ) isAssociated = true;
+        if ( (max1 - min2).GetMagnitude() < minDist ) isAssociated = true;
+        if ( (max1 - max2).GetMagnitude() < minDist ) isAssociated = true;
+
+        if ( isAssociated ) pfoAssociationMap[ pPfo1 ].push_back( pPfo2 );
+      }
+    }
+  }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::GetCRCandidates( const PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, PfoToPfoListMap pfoAssociationMap, PfoToBoolMap pfoToIsCosmicMuonMap, CRCandidateList & candidates ) const
 {
   for ( const ParticleFlowObject * const pPfo : *pPfoList ) {
-    CRCandidate candidate(this, pPfo, pfoIdMap[pPfo], pfoToPurityMap[pPfo], pfoToSignificanceMap[pPfo] );
+    CRCandidate candidate(this, pPfo, pfoIdMap[pPfo], pfoAssociationMap[pPfo], pfoToPurityMap[pPfo], pfoToSignificanceMap[pPfo], pfoToIsCosmicMuonMap[pPfo]);
     candidates.push_back(candidate);
   }
 }
@@ -578,6 +798,7 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N2DHits"     , candidate.m_n2DHits        ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N3DHits"     , candidate.m_n3DHits        ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "NDaughters"  , candidate.m_nDaughters     ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "NAssociated" , candidate.m_nAssociatedPfos));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "TotalEnergy" , candidate.m_totalEnergy    ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "MeanEnergy"  , candidate.m_meanEnergy     ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "CanFit"      , candidate.m_canFit ? 1 : 0 ));
@@ -594,9 +815,10 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Curvature", candidate.m_curvature ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "FitRMS", candidate.m_fitRMS       ));
 
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Purity"      , candidate.m_purity       ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Significance", candidate.m_significance ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Class"       , int(candidate.m_class)   ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Purity"       , candidate.m_purity       ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Significance" , candidate.m_significance ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Class"        , int(candidate.m_class)   ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "IsCosmicMuon" , ( candidate.m_isCosmicMuon ? 1 : 0 ) ));
     
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), "PFOs"));
   }
@@ -605,10 +827,11 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
 //------------------------------------------------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, double purity, double significance ) :
+CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, pandora::PfoList associatedPfos, double purity, double significance, bool isCosmicMuon ) :
   m_algorithm ( algorithm ), 
   m_pPfo( pPfo ),
   m_id( id ),
+  m_associatedPfos( associatedPfos ),
   m_n2DHits( -1 ),
   m_n3DHits( -1 ),
   m_nDaughters( -1 ),
@@ -625,7 +848,8 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const al
   m_length ( std::numeric_limits<double>::max() ),
   m_curvature ( std::numeric_limits<double>::max() ),
   m_purity( purity ),
-  m_significance( significance ) 
+  m_significance( significance ),
+  m_isCosmicMuon ( isCosmicMuon )
 {
   // Get the hit lists
   ClusterList clusters2D;
@@ -656,6 +880,7 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const al
 
   this->CalculateNHits();
   this->CalculateNDaughters();
+  this->CalculateNAssociated();
   this->CalculateTotalEnergy();
   this->CalculateMeanEnergy();
   this->CalculateFitVariables();  
@@ -676,6 +901,13 @@ void CRTaggingAlgorithm::CRCandidate::CalculateNHits()
 void CRTaggingAlgorithm::CRCandidate::CalculateNDaughters()
 {
   m_nDaughters = m_pPfo->GetNDaughterPfos();
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::CRCandidate::CalculateNAssociated()
+{
+  m_nAssociatedPfos = m_associatedPfos.size();
 }
 //------------------------------------------------------------------------------------------------------------------------------------------
 
