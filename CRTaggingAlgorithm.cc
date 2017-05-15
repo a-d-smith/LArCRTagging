@@ -28,9 +28,10 @@ CRTaggingAlgorithm::CRTaggingAlgorithm() :
 }
 
 CRTaggingAlgorithm::~CRTaggingAlgorithm() {
-  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "PFOs"   , "EventData.root", "UPDATE"));
-  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Hits"   , "EventData.root", "UPDATE"));
-  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Targets", "EventData.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "PFOs"       , "EventData.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Hits"       , "EventData.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "Targets"    , "EventData.root", "UPDATE"));
+  PANDORA_MONITORING_API(SaveTree(this->GetPandora(), "CosmicMuons", "EventData.root", "UPDATE"));
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
@@ -199,6 +200,14 @@ StatusCode CRTaggingAlgorithm::Run()
   MCToIntMap targetIdMap;
   this->GetTargetIds( targetToCaloHitListMap, targetIdMap );
 
+  // ===================================================
+  // Classify PFOs based on their cosmic MC information
+  // ===================================================
+
+  // Get the list of primary cosmic muon MCParticles
+  MCParticleList cosmicMuonList; 
+  this->GetPrimaryCosmicMuons( pMCParticleList, cosmicMuonList );
+
   // Find the PFOs are primary cosmic ray muons
   PfoToBoolMap pfoToIsCosmicMuonMap;
   this->GetIsCosmicMuon( pPfoList, caloHitToOriginMap, pfoToIsCosmicMuonMap);
@@ -236,6 +245,7 @@ StatusCode CRTaggingAlgorithm::Run()
   this->Write2DHits( caloHitToOriginMap, caloHitToTargetMap, caloHit2DToPfoMap, pfoIdMap, targetIdMap );
   this->Write3DHits( caloHit3DToPfoMap, pfoIdMap );
   this->WriteTargets( targetIdMap );
+  this->WriteCosmics( cosmicMuonList );
   this->WritePfos( candidates );
 
 
@@ -521,6 +531,18 @@ void CRTaggingAlgorithm::GetTargetIds( LArMonitoringHelper::MCContributionMap ta
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
+void CRTaggingAlgorithm::GetPrimaryCosmicMuons( const MCParticleList *const pMCParticleList, MCParticleList & cosmicMuonList ) const {
+
+  for ( const MCParticle * const pMCParticle : *pMCParticleList ) {
+    if ( std::abs( pMCParticle->GetParticleId() ) == MU_MINUS && LArMCParticleHelper::IsPrimary( pMCParticle ) ) {
+      cosmicMuonList.push_back( pMCParticle );
+    }
+  }
+
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
 void CRTaggingAlgorithm::GetIsCosmicMuon( const PfoList * const pPfoList, CaloHitToOriginMap caloHitToOriginMap, PfoToBoolMap & pfoToIsCosmicMuonMap) const {
 
   for ( const ParticleFlowObject * const pPfo : *pPfoList ) {
@@ -568,9 +590,11 @@ void CRTaggingAlgorithm::GetIsCosmicMuon( const PfoList * const pPfoList, CaloHi
 
       // Determine if is a primary cosmic ray muon
       isCosmicMuon = ( std::abs( mainMCParticle->GetParticleId() ) == MU_MINUS && LArMCParticleHelper::IsPrimary( mainMCParticle ) ) ;
+
     }
     
     pfoToIsCosmicMuonMap.insert( std::make_pair( pPfo, isCosmicMuon ) );
+
   }
 
 }
@@ -783,6 +807,39 @@ void CRTaggingAlgorithm::WriteTargets( MCToIntMap targetIdMap ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "Targets", "Pdg"         , it->first->GetParticleId()  ));
     
     PANDORA_MONITORING_API(FillTree(this->GetPandora(), "Targets"));
+  }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::WriteCosmics( MCParticleList cosmicMuonList ) const
+{
+  for ( const MCParticle * const pMCParticle : cosmicMuonList ) {
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "FileId"      , m_fileId                          ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "EventId"     , m_eventNumber                     ));
+
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "Energy"      , pMCParticle->GetEnergy()          ));
+
+    double P  = pMCParticle->GetMomentum().GetMagnitude();
+    double Px = pMCParticle->GetMomentum().GetX();
+    double Py = pMCParticle->GetMomentum().GetY();
+    double Pz = pMCParticle->GetMomentum().GetZ();
+
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "Momentum"    , P  ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "MomentumX"   , Px ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "MomentumY"   , Py ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "MomentumZ"   , Pz ));
+
+    double thetaX = std::acos( Px / P );
+    double thetaY = std::acos( Py / P );
+    double thetaZ = std::acos( Pz / P );
+
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "ThetaX"      , thetaX ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "ThetaY"      , thetaY ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "ThetaZ"      , thetaZ ));
+    
+    PANDORA_MONITORING_API(FillTree(this->GetPandora(), "CosmicMuons"));
+
   }
 }
 

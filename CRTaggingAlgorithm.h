@@ -279,7 +279,20 @@ private:
 
 
     /**
-     *  @brief Determines if a pfo is a primary cosmic ray muon
+     *  @brief  Get the list of primary cosmic ray muons
+     *
+     *  @param  pMCParticleList input list of MCParticles
+     *  @param  cosmicMuonList  output list of primary cosmic ray muons
+     *
+     */
+    void GetPrimaryCosmicMuons( const pandora::MCParticleList *const pMCParticleList, pandora::MCParticleList & cosmicMuonList ) const;
+
+    /**
+     *  @brief  Determines if a pfo is a primary cosmic ray muon
+     *
+     *  @param  pPfoList             input list of PFOs to classify
+     *  @param  caloHitToOriginMap   input mapping between calo hits and their origin
+     *  @param  pfoToIsCosmicMuonMap output mapping between PFOs and a bool which indicated if they are a primary cosmic ray muon
      */
     void GetIsCosmicMuon( const pandora::PfoList * const pPfoList, CaloHitToOriginMap caloHitToOriginMap, PfoToBoolMap & pfoToIsCosmicMuonMap) const;
 
@@ -337,6 +350,13 @@ private:
      *  @param  targetIdMap  mapping between target MCParticles and their IDs
      */
     void WriteTargets( MCToIntMap targetIdMap ) const;
+
+    /**
+     *  @brief  Write information on all primary muon cosmic MCParticles
+     *
+     *  @param  cosmicMuonList  list of primary cosmic muon MCParticles
+     */
+    void WriteCosmics( pandora::MCParticleList cosmicMuonList ) const;
 
     /**
      *  @brief  Write information on all PFOs
