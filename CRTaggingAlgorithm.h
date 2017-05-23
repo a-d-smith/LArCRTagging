@@ -85,7 +85,7 @@ private:
       /**
        *  @brief  Parametrised constructor
        */ 
-      CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, pandora::PfoList associatedPfos, double purity, double significance, bool isCosmicMuon );
+      CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, int slice, double purity, double significance, bool isCosmicMuon );
 
       const CRTaggingAlgorithm * const          m_algorithm;    ///< The algorithm using this candidate
 
@@ -95,14 +95,13 @@ private:
       pandora::CaloHitList                      m_hitList3D;    ///< List of all the 3D hits associated with the PFO
       int                                       m_id;           ///< Unique idendifier for the PFO
 
-      pandora::PfoList                          m_associatedPfos; ///< List of associated PFOs
+      int                                       m_slice;        ///< Slice ID
  
       // Variables used to identify cosmic rays
       int                                       m_n2DHits;      ///< Number of 2D hits over all views
       int                                       m_n3DHits;      ///< Number of 3D hits
     
       int                                       m_nDaughters;   ///< Number of daughter PFOs
-      int                                       m_nAssociatedPfos; ///< Number of associated PFOs
 
       double                                    m_totalEnergy;  ///< Sum of all input hit energies
       double                                    m_meanEnergy;   ///< Mean of all input hit energies 
@@ -135,7 +134,6 @@ private:
       // Functions to calcluate the required variables for classification
       void CalculateNHits();                                    ///< Calculate m_nHits
       void CalculateNDaughters();                               ///< Calculate m_nDaughters
-      void CalculateNAssociated();                              ///< Calculate m_nAssociatedPfos
       void CalculateTotalEnergy();                              ///< Calculate m_totalEnergy
       void CalculateMeanEnergy();                               ///< Calculate m_meanEnergy 
       void CalculateFitVariables();                             ///< Calculate all variables which require the fit
@@ -303,7 +301,37 @@ private:
      *  @param  pfoAssociationsMap  output mapping between associated PFOs
      */
     void GetPfoAssociations( const pandora::PfoList * const pPfoList, PfoToPfoListMap & pfoAssociationMap ) const;
-  
+
+    /**
+     *  @brief  Check if two PFO endpoints are associated by distance of closest approach
+     *
+     *  @param  endPoint1  position vector of an endpoint of PFO 1
+     *  @param  endDir1    direction vector of an endpoint of PFO 1
+     *  @param  endPoint2  position vector of an endpoint of PFO 2
+     *  @param  endDir2    direction vector of an endpoint of PFOs
+     *
+     *  @return If the PFOs are assoicated
+     */
+    bool CheckAssociation( pandora::CartesianVector endPoint1, pandora::CartesianVector endDir1, pandora::CartesianVector endPoint2, pandora::CartesianVector endDir2 ) const;
+
+    /**
+     *  @brief  Break the event up into slices of associated PFOs
+     *
+     *  @param  pfoAssociationMap  mapping between PFOs and other associated PFOs
+     *  @param  pfoToSliceIdMap    mapping between PFOs and thier slice ID
+     */   
+    void SliceEvent( PfoToPfoListMap pfoAssociationMap, PfoToIntMap & pfoToSliceIdMap ) const;
+
+
+    /**
+     *  @brief  Fill a slice iteratively using PFO associations
+     *
+     *  @param  pfoAssociationMap  mapping between PFOs and other associated PFOs
+     *  @param  pPfo               PFO to add to the slice
+     *  @param  slice              the slice to add PFOs to
+     */
+    void FillSlice( PfoToPfoListMap pfoAssociationMap, const pandora::ParticleFlowObject * const pPfo, pandora::PfoList & slice ) const;
+
     /**
      *  @brief  Make a list of CRCandidates
      *
@@ -311,10 +339,10 @@ private:
      *  @param  pfoToPurityMap        input mapping between PFOs and their purity
      *  @param  pfoToSignificanceMap  input mapping between PFOs and their significance
      *  @param  pfoIdMap              input mapping between PFOs and their ID
-     *  @param  pfoAssociationsMap    input mapping between associated PFOs
+     *  @param  pfoToSliceIdMap       input mapping between PFOs and their slice id
      *  @param  candidates            output list of CRCandidates 
      */
-    void GetCRCandidates( const pandora::PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, PfoToPfoListMap pfoAssociationMap, PfoToBoolMap pfoToIsCosmicMuonMap, CRCandidateList & candidates ) const;
+    void GetCRCandidates( const pandora::PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, PfoToIntMap pfoToSliceIdMap, PfoToBoolMap pfoToIsCosmicMuonMap, CRCandidateList & candidates ) const;
   
     /**
      *  @brief  Make a list of CRCandidates
@@ -378,6 +406,10 @@ private:
     int                     m_matchingMinPrimaryHits;       ///< The minimum number of good mc primary hits required
     int                     m_matchingMinHitsForGoodView;   ///< The minimum number of good mc primary hits in given view to declare view to be good
     int                     m_matchingMinPrimaryGoodViews;  ///< The minimum number of good views for a mc primary
+    
+    double                  m_angularUncertainty;           ///< The uncertainty in degrees for the angle of a PFO
+    double                  m_positionalUncertainty;        ///< The uncertainty in cm for the position of PFO endpoint in 3D
+    double                  m_maxAssociationDist;           ///< The maximum distance from endpoint to point of closest approach
     
 };
 

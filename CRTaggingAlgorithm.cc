@@ -23,7 +23,10 @@ CRTaggingAlgorithm::CRTaggingAlgorithm() :
   m_maxPhotonPropagation(2.5f),
   m_matchingMinPrimaryHits(15),
   m_matchingMinHitsForGoodView(5),
-  m_matchingMinPrimaryGoodViews(2)
+  m_matchingMinPrimaryGoodViews(2),
+  m_angularUncertainty( 10.0 ),
+  m_positionalUncertainty( 3.0 ),
+  m_maxAssociationDist( 3 * 18.0 ) // 3 photon conversion lengths in Ar
 {
 }
 
@@ -226,8 +229,11 @@ StatusCode CRTaggingAlgorithm::Run()
   PfoToPfoListMap pfoAssociationMap;
   this->GetPfoAssociations ( pPfoList, pfoAssociationMap ); 
 
+  PfoToIntMap pfoToSliceIdMap;
+  this->SliceEvent( pfoAssociationMap, pfoToSliceIdMap );
+
   CRCandidateList candidates;
-  this->GetCRCandidates( pPfoList, pfoToPurityMap, pfoToSignificanceMap, pfoIdMap, pfoAssociationMap, pfoToIsCosmicMuonMap, candidates );
+  this->GetCRCandidates( pPfoList, pfoToPurityMap, pfoToSignificanceMap, pfoIdMap, pfoToSliceIdMap, pfoToIsCosmicMuonMap, candidates );
 
 
   // ------------------------------------------------------------------------------------------------------------------------------------------
@@ -604,11 +610,12 @@ void CRTaggingAlgorithm::GetIsCosmicMuon( const PfoList * const pPfoList, CaloHi
 void CRTaggingAlgorithm::GetPfoAssociations( const PfoList * const pPfoList, PfoToPfoListMap & pfoAssociationMap ) const 
 {
   unsigned int minimum3DHits = 15;
-  double minDist = 20;
 
   for ( const ParticleFlowObject * const pPfo1 : *pPfoList ) {
-    PfoList blankPfoList;
-    pfoAssociationMap.insert(std::make_pair( pPfo1, blankPfoList ));
+    if ( pfoAssociationMap.find( pPfo1 ) == pfoAssociationMap.end() ) {
+      PfoList blankPfoList;
+      pfoAssociationMap.insert(std::make_pair( pPfo1, blankPfoList ));
+    }
 
     ClusterList clusters3D1;
     LArPfoHelper::GetThreeDClusterList(pPfo1, clusters3D1);
@@ -620,11 +627,20 @@ void CRTaggingAlgorithm::GetPfoAssociations( const PfoList * const pPfoList, Pfo
 
  
     ThreeDSlidingFitResult fit1 (pCluster1, 5, LArGeometryHelper::GetWireZPitch(this->GetPandora())); 
-    CartesianVector min1 = fit1.GetGlobalMinLayerPosition();
-    CartesianVector max1 = fit1.GetGlobalMaxLayerPosition();
+    CartesianVector min1    = fit1.GetGlobalMinLayerPosition();
+    CartesianVector max1    = fit1.GetGlobalMaxLayerPosition();
+    
+    ThreeDSlidingFitResult fit1b (pCluster1, 100, LArGeometryHelper::GetWireZPitch(this->GetPandora())); 
+    CartesianVector minDir1 = fit1b.GetGlobalMinLayerDirection() * ( -1 );
+    CartesianVector maxDir1 = fit1b.GetGlobalMaxLayerDirection();
 
     for ( const ParticleFlowObject * const pPfo2 : *pPfoList ) {
       if ( pPfo1 != pPfo2 ) {
+        if ( pfoAssociationMap.find( pPfo2 ) == pfoAssociationMap.end() ) {
+          PfoList blankPfoList;
+          pfoAssociationMap.insert(std::make_pair( pPfo2, blankPfoList ));
+        }
+
         ClusterList clusters3D2;
         LArPfoHelper::GetThreeDClusterList(pPfo2, clusters3D2);
         if ( clusters3D2.size() == 0 ) continue;
@@ -634,16 +650,28 @@ void CRTaggingAlgorithm::GetPfoAssociations( const PfoList * const pPfoList, Pfo
         if ( caloHitList2.size() < minimum3DHits ) continue;
 
         ThreeDSlidingFitResult fit2 (pCluster2, 5, LArGeometryHelper::GetWireZPitch(this->GetPandora())); 
-        CartesianVector min2 = fit2.GetGlobalMinLayerPosition();
-        CartesianVector max2 = fit2.GetGlobalMaxLayerPosition();
+        CartesianVector min2    = fit2.GetGlobalMinLayerPosition();
+        CartesianVector max2    = fit2.GetGlobalMaxLayerPosition();
+        
+        ThreeDSlidingFitResult fit2b (pCluster2, 100, LArGeometryHelper::GetWireZPitch(this->GetPandora())); 
+        CartesianVector minDir2 = fit2b.GetGlobalMinLayerDirection() * ( -1 );
+        CartesianVector maxDir2 = fit2b.GetGlobalMaxLayerDirection();
 
         bool isAssociated = false;
-        if ( (min1 - min2).GetMagnitude() < minDist ) isAssociated = true;
-        if ( (min1 - max2).GetMagnitude() < minDist ) isAssociated = true;
-        if ( (max1 - min2).GetMagnitude() < minDist ) isAssociated = true;
-        if ( (max1 - max2).GetMagnitude() < minDist ) isAssociated = true;
 
-        if ( isAssociated ) pfoAssociationMap[ pPfo1 ].push_back( pPfo2 );
+        if ( this->CheckAssociation( min1, minDir1, min2, minDir2 ) ) isAssociated = true;
+        if ( this->CheckAssociation( min1, minDir1, max2, maxDir2 ) ) isAssociated = true;
+        if ( this->CheckAssociation( max1, maxDir1, min2, minDir2 ) ) isAssociated = true;
+        if ( this->CheckAssociation( max1, maxDir1, max2, maxDir2 ) ) isAssociated = true;
+
+        if ( isAssociated ) {
+          if ( std::find( pfoAssociationMap[ pPfo1 ].begin(), pfoAssociationMap[ pPfo1 ].end(), pPfo2 ) == pfoAssociationMap[ pPfo1 ].end() ) {
+            pfoAssociationMap[ pPfo1 ].push_back( pPfo2 );
+          }
+          if ( std::find( pfoAssociationMap[ pPfo2 ].begin(), pfoAssociationMap[ pPfo2 ].end(), pPfo1 ) == pfoAssociationMap[ pPfo2 ].end() ) {
+            pfoAssociationMap[ pPfo2 ].push_back( pPfo1 );
+          }
+        }
       }
     }
   }
@@ -651,10 +679,117 @@ void CRTaggingAlgorithm::GetPfoAssociations( const PfoList * const pPfoList, Pfo
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CRTaggingAlgorithm::GetCRCandidates( const PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, PfoToPfoListMap pfoAssociationMap, PfoToBoolMap pfoToIsCosmicMuonMap, CRCandidateList & candidates ) const
+bool CRTaggingAlgorithm::CheckAssociation( CartesianVector endPoint1, CartesianVector endDir1, CartesianVector endPoint2, CartesianVector endDir2 ) const 
+{
+  
+  CartesianVector n = endDir1 * ( 1. / endDir1.GetMagnitude() );
+  CartesianVector m = endDir2 * ( 1. / endDir2.GetMagnitude() );
+ 
+  CartesianVector a = endPoint2 - endPoint1;
+  
+  double b = n.GetDotProduct(m);
+ 
+  if ( b == 1 ) return false;
+ 
+  // Distance from endPoint1 along endDir1 to the point of closest approach
+  double lambda = ( n - m*b ).GetDotProduct( a ) / ( 1 - b*b );
+  
+  // Distance from endPoint2 along endDir2 to the point of closest approach
+  double mu     = ( n*b - m ).GetDotProduct( a ) / ( 1 - b*b );
+
+
+  // Calculate the maximum vertex uncertainty
+  double deltaTheta = m_angularUncertainty * std::asin(1) / 180;
+  double maxVertexUncertainty = m_maxAssociationDist * std::sin( deltaTheta ) + m_positionalUncertainty; 
+
+  // Ensure that the distances to the point of closest approch are within the limits
+  if ( lambda < -maxVertexUncertainty )                       return false;
+  if ( mu     < -maxVertexUncertainty )                       return false;
+  if ( lambda > m_maxAssociationDist + maxVertexUncertainty ) return false;
+  if ( mu     > m_maxAssociationDist + maxVertexUncertainty ) return false;
+
+  // Ensure the point of closest approach is within the detector volume 
+  // (Because we only want to associate neutrinos we can use the x-direction)
+  double face_Xa =    0.00;  // Anode      X face
+  double face_Xc =  256.00;  // Cathode    X face
+  double face_Yb = -116.25;  // Bottom     Y face
+  double face_Yt =  116.25;  // Top        Y face
+  double face_Zu =    0.00;  // Upstream   Z face
+  double face_Zd = 1036.80;  // Downstream Z face
+
+  CartesianVector impactPos = (endPoint1 + n*lambda + endPoint2 + m*mu ) * 0.5 ;
+  double impactX = impactPos.GetX();
+  double impactY = impactPos.GetY();
+  double impactZ = impactPos.GetZ();
+
+  if ( impactX < face_Xa - maxVertexUncertainty ) return false;
+  if ( impactX > face_Xc + maxVertexUncertainty ) return false;
+  if ( impactY < face_Yb - maxVertexUncertainty ) return false;
+  if ( impactY > face_Yt + maxVertexUncertainty ) return false;
+  if ( impactZ < face_Zu - maxVertexUncertainty ) return false;
+  if ( impactZ > face_Zd + maxVertexUncertainty ) return false;
+
+  // Maximum uncertainty in impact parameter
+  double maxImpactDist = std::sin( deltaTheta ) * ( std::abs(mu) + std::abs(lambda) ) + m_positionalUncertainty;
+
+  // Calculate the distance of closest approach
+  CartesianVector D = a - n*lambda + m*mu;
+
+  return ( D.GetMagnitude() <= maxImpactDist );
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::SliceEvent( PfoToPfoListMap pfoAssociationMap, PfoToIntMap & pfoToSliceIdMap ) const
+{
+  std::vector< PfoList > slices;
+
+  for ( PfoToPfoListMap::iterator it = pfoAssociationMap.begin(); it != pfoAssociationMap.end(); ++it ) {
+    const ParticleFlowObject * const pPfo = it->first;
+    
+    bool inSlice = false;
+    for ( PfoList & slice : slices ) {
+      if ( std::find(slice.begin(), slice.end(), pPfo) != slice.end() ) {
+        inSlice = true;
+        break;
+      }
+    }
+
+    if ( ! inSlice ) {
+      PfoList newSlice;
+      this->FillSlice( pfoAssociationMap, pPfo, newSlice );
+      slices.push_back( newSlice );
+    }
+  }
+
+  int sliceId = 0;
+  for ( PfoList slice : slices ) {
+    for ( const ParticleFlowObject * const pPfo : slice ) {
+      pfoToSliceIdMap.insert( std::make_pair( pPfo, sliceId ) );
+    }
+    sliceId++;
+  }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::FillSlice( PfoToPfoListMap pfoAssociationMap, const ParticleFlowObject * const pPfo, PfoList & slice ) const
+{
+
+  if ( std::find( slice.begin(), slice.end(), pPfo ) == slice.end() ) {
+    slice.push_back( pPfo );
+    for ( const ParticleFlowObject * const pPfo2 : pfoAssociationMap[ pPfo ] ) {
+      this->FillSlice( pfoAssociationMap, pPfo2, slice );
+    }
+  }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+
+void CRTaggingAlgorithm::GetCRCandidates( const PfoList * const pPfoList, PfoToDoubleMap pfoToPurityMap, PfoToDoubleMap pfoToSignificanceMap, PfoToIntMap pfoIdMap, PfoToIntMap pfoToSliceIdMap, PfoToBoolMap pfoToIsCosmicMuonMap, CRCandidateList & candidates ) const
 {
   for ( const ParticleFlowObject * const pPfo : *pPfoList ) {
-    CRCandidate candidate(this, pPfo, pfoIdMap[pPfo], pfoAssociationMap[pPfo], pfoToPurityMap[pPfo], pfoToSignificanceMap[pPfo], pfoToIsCosmicMuonMap[pPfo]);
+    CRCandidate candidate(this, pPfo, pfoIdMap[pPfo], pfoToSliceIdMap[pPfo], pfoToPurityMap[pPfo], pfoToSignificanceMap[pPfo], pfoToIsCosmicMuonMap[pPfo]);
     candidates.push_back(candidate);
   }
 }
@@ -819,6 +954,14 @@ void CRTaggingAlgorithm::WriteCosmics( MCParticleList cosmicMuonList ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "EventId"     , m_eventNumber                     ));
 
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "Energy"      , pMCParticle->GetEnergy()          ));
+    
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "StartX"      , pMCParticle->GetVertex().GetX()  ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "StartY"      , pMCParticle->GetVertex().GetY()  ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "StartZ"      , pMCParticle->GetVertex().GetZ()  ));
+
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "EndX"        , pMCParticle->GetEndpoint().GetX()  ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "EndY"        , pMCParticle->GetEndpoint().GetY()  ));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "CosmicMuons", "EndZ"        , pMCParticle->GetEndpoint().GetZ()  ));
 
     double P  = pMCParticle->GetMomentum().GetMagnitude();
     double Px = pMCParticle->GetMomentum().GetX();
@@ -855,7 +998,7 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N2DHits"     , candidate.m_n2DHits        ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "N3DHits"     , candidate.m_n3DHits        ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "NDaughters"  , candidate.m_nDaughters     ));
-    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "NAssociated" , candidate.m_nAssociatedPfos));
+    PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "Slice"       , candidate.m_slice          ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "TotalEnergy" , candidate.m_totalEnergy    ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "MeanEnergy"  , candidate.m_meanEnergy     ));
     PANDORA_MONITORING_API(SetTreeVariable(this->GetPandora(), "PFOs", "CanFit"      , candidate.m_canFit ? 1 : 0 ));
@@ -882,13 +1025,12 @@ void CRTaggingAlgorithm::WritePfos( CRCandidateList candidates ) const
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------------------------------------------------------
 
-CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, pandora::PfoList associatedPfos, double purity, double significance, bool isCosmicMuon ) :
+CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const algorithm, const pandora::ParticleFlowObject * const pPfo, int id, int slice, double purity, double significance, bool isCosmicMuon ) :
   m_algorithm ( algorithm ), 
   m_pPfo( pPfo ),
   m_id( id ),
-  m_associatedPfos( associatedPfos ),
+  m_slice( slice ),
   m_n2DHits( -1 ),
   m_n3DHits( -1 ),
   m_nDaughters( -1 ),
@@ -937,7 +1079,6 @@ CRTaggingAlgorithm::CRCandidate::CRCandidate(const CRTaggingAlgorithm * const al
 
   this->CalculateNHits();
   this->CalculateNDaughters();
-  this->CalculateNAssociated();
   this->CalculateTotalEnergy();
   this->CalculateMeanEnergy();
   this->CalculateFitVariables();  
@@ -962,17 +1103,13 @@ void CRTaggingAlgorithm::CRCandidate::CalculateNDaughters()
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 
-void CRTaggingAlgorithm::CRCandidate::CalculateNAssociated()
-{
-  m_nAssociatedPfos = m_associatedPfos.size();
-}
-//------------------------------------------------------------------------------------------------------------------------------------------
-
 void CRTaggingAlgorithm::CRCandidate::CalculateTotalEnergy()
 {
   m_totalEnergy = 0;
   for ( const CaloHit * const pCaloHit : m_hitList2D ) {
-    m_totalEnergy += pCaloHit->GetInputEnergy();
+    if ( pCaloHit->GetHitType() == TPC_VIEW_W ){
+      m_totalEnergy += pCaloHit->GetInputEnergy();
+    }
   }
 }
 
@@ -1091,6 +1228,10 @@ StatusCode CRTaggingAlgorithm::ReadSettings(const TiXmlHandle xmlHandle)
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MatchingMinPrimaryHits", m_matchingMinPrimaryHits));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MatchingMinHitsForGoodView", m_matchingMinHitsForGoodView));
     PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MatchingMinPrimaryGoodViews", m_matchingMinPrimaryGoodViews));
+    
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "AngularUncertainty"   , m_angularUncertainty ));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "PositionalUncertainty", m_positionalUncertainty ));
+    PANDORA_RETURN_RESULT_IF_AND_IF(STATUS_CODE_SUCCESS, STATUS_CODE_NOT_FOUND, !=, XmlHelper::ReadValue(xmlHandle, "MaxAssociationDist"   , m_maxAssociationDist));
 
     return STATUS_CODE_SUCCESS;
 }
