@@ -214,6 +214,8 @@ StatusCode CRTaggingAlgorithm::Run()
   // Find the PFOs are primary cosmic ray muons
   PfoToBoolMap pfoToIsCosmicMuonMap;
   this->GetIsCosmicMuon( pPfoList, caloHitToOriginMap, pfoToIsCosmicMuonMap);
+
+
  
   // ------------------------------------------------------------------------------------------------------------------------------------------
   // Here begins what might actually form the algorithm - everything else is for development only
@@ -237,6 +239,135 @@ StatusCode CRTaggingAlgorithm::Run()
 
 
   // ------------------------------------------------------------------------------------------------------------------------------------------
+  
+  /*
+    TESTING
+  */
+  int nCo    = 0;
+  int nCoTag = 0;
+  int nNu    = 0;
+  int nNuTag = 0;
+
+  for ( CRCandidate cand : candidates ) {
+    const ParticleFlowObject * const pPfo = cand.m_pPfo;
+
+    // Get the list of associated MCParticles
+    std::map< const MCParticle * const, int > mcParticleContributionMap;
+
+    // For each hit in the PFO, find the associated cosmic MC primary (if any) 
+    // count the number of hits associated with each such MCParticle in the PFO
+    ClusterList clusters2D;
+    LArPfoHelper::GetTwoDClusterList(pPfo, clusters2D);
+
+    int nHits = 0;
+    for (const Cluster * const pCluster : clusters2D){
+      CaloHitList caloHitList;
+      pCluster->GetOrderedCaloHitList().FillCaloHitList(caloHitList);
+
+      for (const CaloHit * const pCaloHit : caloHitList){
+        nHits++;
+        const MCParticle * mainMCParticle = this->GetMainMCParticle(pCaloHit);
+        if ( mainMCParticle != nullptr ) {
+          const MCParticle * primaryMCParticle = LArMCParticleHelper::GetPrimaryMCParticle(mainMCParticle);
+          
+          if ( mcParticleContributionMap.find( primaryMCParticle ) != mcParticleContributionMap.end() ) {
+            mcParticleContributionMap.insert( std::make_pair( primaryMCParticle, 0 ) );
+          } 
+          mcParticleContributionMap[ primaryMCParticle ]++;
+
+        }
+      }
+    }
+
+    // Now find the MC primary with the most associated hits
+    if ( mcParticleContributionMap.size() != 0 ){
+      const MCParticle * mainMCParticle = nullptr;
+      int maxHits = 0;
+      for ( std::map< const MCParticle * const, int >::iterator it = mcParticleContributionMap.begin(); it != mcParticleContributionMap.end(); ++it ){
+        if ( it->second > maxHits ) {
+          mainMCParticle = it->first;
+          maxHits        = it->second;
+        }
+      } 
+
+      if ( cand.m_canFit ) {
+        bool shouldShow = false;
+        if ( cand.m_class == 0 && cand.m_isCosmicMuon ) {
+          std::cout << "PFO " << cand.m_id << std::endl;
+          std::cout << "  Clear cosmic muon" << std::endl;
+          nCo++;
+          shouldShow = true;
+        }
+        if ( cand.m_class == 1 ) {
+          std::cout << "PFO " << cand.m_id << std::endl;
+          std::cout << "  Clear neutrino" << std::endl;
+          nNu++;
+          shouldShow = true;
+        }
+        if ( shouldShow ) {
+          //std::cout << "  Main MCParticle : " << mainMCParticle->GetParticleId() << std::endl;
+          CartesianVector mcDir = mainMCParticle->GetEndpoint() - mainMCParticle->GetVertex();
+          if ( mcDir.GetMagnitude() != 0 ) {
+            mcDir = mcDir.GetUnitVector();
+            //std::cout << "  MC Direction    : " << mcDir.GetX() << ", " << mcDir.GetY() << ", " << mcDir.GetZ() << std::endl;
+            CartesianVector recoDir( cand.m_X2 - cand.m_X1, cand.m_Y2 - cand.m_Y1, cand.m_Z2 - cand.m_Z1 );
+            recoDir = recoDir.GetUnitVector();
+            //std::cout << "  Reco Direction  : " << recoDir.GetX() << ", " << recoDir.GetY() << ", " << recoDir.GetZ() << std::endl;
+  
+            double directionality = mcDir.GetDotProduct(recoDir);  
+            //std::cout << "  Directionality  : " << directionality << std::endl;
+  
+            // Start point is 1, end point is 2
+            double startY = (directionality > 0) ? cand.m_Y1 : cand.m_Y2;
+            double endY   = (directionality > 0) ? cand.m_Y2 : cand.m_Y1;
+  
+            double face_Yt =  116.25;  // Top Y face
+            bool topAssociated = false;
+            bool straightDown  = false;
+            if ( startY > endY ) {
+              //std::cout << "    Downwards going : " << startY << " -> " << endY << std::endl;
+              if ( startY > face_Yt - 20 ){
+                std::cout << "    Top associated" << std::endl;
+                topAssociated = true;
+              } 
+
+              double cosTheta = ( recoDir * std::abs( directionality ) * (1. / directionality) ).GetZ();
+              if ( cand.m_curvature < 0.04 && cosTheta > 0.6 ) {
+                straightDown = true;
+                std::cout << "    Straight down" << std::endl;
+              }
+            }
+  
+            double face_Xa = 0;
+            double face_Xc = 256;
+            double padding = 5;
+            
+            bool outOfTime = false;
+            if ( cand.m_X1 < face_Xa - padding || cand.m_X2 < face_Xa - padding ) outOfTime = true;
+            if ( cand.m_X1 > face_Xc + padding || cand.m_X2 > face_Xc + padding ) outOfTime = true;
+  
+            //std::cout << "  X : " << cand.m_X1 << " --> " << cand.m_X2 << std::endl;
+            if ( outOfTime ) {
+              std::cout << "    Out of time" << std::endl;
+            }
+
+            if ( outOfTime || topAssociated || straightDown ) {
+              if ( cand.m_class == 0 ) nCoTag++;
+              if ( cand.m_class == 1 ) nNuTag++;
+            }
+          }
+          else{
+            std::cout << "  No MC dirction " << std::endl;
+          }
+        }
+      }
+    }
+  }
+
+  std::cout << " Neutrinos tagged  : " << nNuTag << " / " << nNu << " ( " << 100 * ( double (nNuTag) / double (nNu)) << "% )" << std::endl;
+  std::cout << " Cosmic mu tagged  : " << nCoTag << " / " << nCo << " ( " << 100 * ( double (nCoTag) / double (nCo)) << "% )" << std::endl;
+
+  /* End testing */
 
 
   // ===================================================
